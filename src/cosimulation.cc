@@ -153,3 +153,62 @@ CoDRAMResponse *SimpleCoDRAMsim3::check_response(bool is_write) {
     }
     return NULL;
 }
+
+
+
+// 
+// unify interface
+// 
+#include <assert.h>
+
+CoDRAMsim3 *dram = NULL;
+
+struct dramsim3_meta {
+  uint32_t id;
+};
+
+extern "C" {
+
+void dramsim3_init(const char *config, const char* outdir) {
+  assert(dram == NULL);
+  dram = new ComplexCoDRAMsim3(config, outdir);
+  printf("[%s:%s:%d] enter dramsim3_init()\n", __FILE__, __FUNCTION__, __LINE__);
+}
+
+void dramsim3_step() {
+  dram->tick();
+}
+
+void dramsim3_finish() {
+  printf("[%s:%s:%d] enter dramsim3_finish()\n", __FILE__, __FUNCTION__, __LINE__);
+  delete dram;
+  dram = NULL;
+}
+
+uint64_t memory_response(bool isWrite) {
+  auto response = (isWrite) ? dram->check_write_response() : dram->check_read_response();
+  if (response) {
+    auto meta = static_cast<dramsim3_meta *>(response->req->meta);
+    uint64_t response_value = meta->id | (1UL << 32);
+    delete meta;
+    delete response;
+    return response_value;
+  }
+  return 0;
+}
+
+bool memory_request(uint64_t address, uint32_t id, bool isWrite) {
+  if (dram->will_accept(address, isWrite)) {
+    auto req = new CoDRAMRequest();
+    auto meta = new dramsim3_meta;
+    req->address = address;
+    req->is_write = isWrite;
+    meta->id = id;
+    req->meta = meta;
+    dram->add_request(req);
+    return true;
+  }
+  return false;
+}
+
+}
